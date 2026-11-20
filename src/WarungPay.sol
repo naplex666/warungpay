@@ -272,7 +272,7 @@ contract WarungPay is ReentrancyGuard {
     }
 
     /// @notice Merchant withdraws from their savings pot (pull-payment).
-    function withdrawSavings(uint256 amount) external onlyMerchant nonReentrant {
+    function withdrawSavings(uint256 amount) external nonReentrant onlyMerchant {
         if (amount == 0) revert InvalidAmount();
         if (amount > savingsBalance[msg.sender]) revert InsufficientSavings();
         savingsBalance[msg.sender] -= amount;
