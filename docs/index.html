@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WarungPay — Bayar Pakai tUSD8 di Aevum</title>
+<link rel="stylesheet" href="style.css">
+<script src="vendor/ethers.umd.min.js"></script>
+<script>if (typeof window.ethers === "undefined") { document.write('<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"><\/script>'); }</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🏪</span>
+    <div>
+      <h1>WarungPay</h1>
+      <p class="subtitle">Tagihan &amp; tabungan warung di Aevum testnet</p>
+    </div>
+  </div>
+  <div class="wallet-box">
+    <div class="balances" id="balances" hidden>
+      <span>tQDAY: <b id="balNative">—</b></span>
+      <span>tUSD8: <b id="balToken">—</b></span>
+    </div>
+    <span class="chain-badge" id="chainBadge">Belum terhubung</span>
+    <button id="btnConnect" class="btn btn-primary">Hubungkan MetaMask</button>
+  </div>
+</header>
+
+<main>
+  <div id="noContractBanner" class="banner banner-warn" hidden>
+    ⚠️ Kontrak WarungPay <b>belum di-deploy</b> ke Aevum testnet. UI ini sudah siap,
+    tapi transaksi belum bisa jalan sampai alamat kontrak diisi di <code>config.js</code>.
+    Saldo dan koneksi wallet tetap bisa dicek.
+  </div>
+  <div id="wrongChainBanner" class="banner banner-warn" hidden>
+    ⚠️ Kamu terhubung ke jaringan yang salah.
+    <button id="btnSwitchChain" class="btn btn-small">Pindah ke Aevum Testnet</button>
+  </div>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="merchant">🧾 Merchant</button>
+    <button class="tab" data-tab="buyer">🛒 Pembeli</button>
+  </nav>
+
+  <!-- ============ TAB MERCHANT ============ -->
+  <section id="tab-merchant" class="tab-panel active">
+    <div class="card">
+      <h2>Status Merchant</h2>
+      <p id="merchantStatus">Hubungkan wallet untuk melihat status.</p>
+      <button id="btnRegister" class="btn btn-primary" disabled>Daftar sebagai Merchant</button>
+    </div>
+
+    <div class="card">
+      <h2>Buat Tagihan</h2>
+      <form id="formInvoice">
+        <label>Jumlah (tUSD8)
+          <input type="number" id="invAmount" min="0.000001" step="any" placeholder="contoh: 5.50" required>
+        </label>
+        <label>Catatan
+          <input type="text" id="invNote" maxlength="120" placeholder="contoh: Kopi + gorengan" required>
+        </label>
+        <label>Berlaku sampai
+          <input type="datetime-local" id="invExpiry" required>
+        </label>
+        <button type="submit" class="btn btn-primary" id="btnCreateInvoice" disabled>Buat Tagihan</button>
+      </form>
+      <p class="hint">Pembeli membayar tagihan ini dalam tUSD8. Otomatis terbagi: 90% langsung ke kamu, 10% masuk tabungan (bisa diubah di bawah).</p>
+    </div>
+
+    <div class="card">
+      <h2>Tagihan Saya</h2>
+      <button id="btnRefreshInvoices" class="btn btn-small" disabled>Muat Ulang</button>
+      <div id="invoiceList" class="list"><p class="muted">Belum ada data.</p></div>
+    </div>
+
+    <div class="card">
+      <h2>Kasir (Session Key)</h2>
+      <p class="hint">Kasir bisa membuat tagihan atas nama warungmu, dibatasi jumlah per tagihan dan masa berlaku. Bisa dicabut kapan saja.</p>
+      <form id="formCashier">
+        <label>Alamat kasir
+          <input type="text" id="cashierAddr" placeholder="0x…" required>
+        </label>
+        <label>Batas per tagihan (tUSD8)
+          <input type="number" id="cashierCap" min="0.000001" step="any" placeholder="contoh: 20" required>
+        </label>
+        <label>Berlaku sampai
+          <input type="datetime-local" id="cashierExpiry" required>
+        </label>
+        <button type="submit" class="btn btn-primary" id="btnGrantCashier" disabled>Beri Akses Kasir</button>
+      </form>
+      <form id="formRevoke" class="inline-form">
+        <label>Alamat kasir
+          <input type="text" id="revokeAddr" placeholder="0x…" required>
+        </label>
+        <button type="submit" class="btn btn-danger" id="btnRevokeCashier" disabled>Cabut Akses</button>
+      </form>
+      <div id="cashierStatus" class="list"></div>
+      <h3>Buat Tagihan sebagai Kasir</h3>
+      <p class="hint">Untuk kasir yang sudah diberi session key oleh merchant.</p>
+      <form id="formInvoiceFor">
+        <label>Alamat merchant
+          <input type="text" id="invForMerchant" placeholder="0x…" required>
+        </label>
+        <label>Jumlah (tUSD8)
+          <input type="number" id="invForAmount" min="0.000001" step="any" required>
+        </label>
+        <label>Catatan
+          <input type="text" id="invForNote" maxlength="120" required>
+        </label>
+        <label>Berlaku sampai
+          <input type="datetime-local" id="invForExpiry" required>
+        </label>
+        <button type="submit" class="btn btn-primary" id="btnCreateInvoiceFor" disabled>Buat Tagihan untuk Merchant</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Tabungan &amp; Pengaturan</h2>
+      <p>Saldo tabungan: <b id="savingsBalance">—</b> tUSD8</p>
+      <form id="formWithdraw" class="inline-form">
+        <label>Jumlah tarik (tUSD8)
+          <input type="number" id="withdrawAmount" min="0.000001" step="any" required>
+        </label>
+        <button type="submit" class="btn btn-primary" id="btnWithdraw" disabled>Tarik Tabungan</button>
+      </form>
+      <form id="formSplit" class="inline-form">
+        <label>Tabungan (%) — maks 50%
+          <input type="number" id="splitPct" min="0" max="50" step="0.1" placeholder="10" required>
+        </label>
+        <button type="submit" class="btn btn-primary" id="btnSetSplit" disabled>Atur Split</button>
+        <span class="muted">Saat ini: <b id="splitCurrent">—</b></span>
+      </form>
+      <form id="formDailyCap" class="inline-form">
+        <label>Batas terima harian (tUSD8, 0 = tanpa batas)
+          <input type="number" id="dailyCapAmount" min="0" step="any" placeholder="0" required>
+        </label>
+        <button type="submit" class="btn btn-primary" id="btnSetDailyCap" disabled>Atur Batas Harian</button>
+        <span class="muted">Saat ini: <b id="dailyCapCurrent">—</b></span>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ TAB PEMBELI ============ -->
+  <section id="tab-buyer" class="tab-panel">
+    <div class="card">
+      <h2>Bayar Tagihan</h2>
+      <form id="formLookup" class="inline-form">
+        <label>ID Tagihan
+          <input type="number" id="lookupId" min="1" step="1" placeholder="contoh: 1" required>
+        </label>
+        <button type="submit" class="btn btn-primary" id="btnLookup" disabled>Lihat Tagihan</button>
+      </form>
+      <div id="invoiceDetail" class="list"><p class="muted">Masukkan ID tagihan untuk melihat detailnya.</p></div>
+      <div id="payBox" hidden>
+        <p>Approval tUSD8: <b id="allowanceText">—</b></p>
+        <button id="btnApprove" class="btn btn-secondary">1️⃣ Approve tUSD8</button>
+        <button id="btnPay" class="btn btn-primary" disabled>2️⃣ Bayar Sekarang</button>
+      </div>
+      <div id="receipt" class="receipt" hidden></div>
+    </div>
+    <div class="card">
+      <h2>Cara Pakai</h2>
+      <ol>
+        <li>Hubungkan MetaMask dan pindah ke <b>Aevum Testnet</b>.</li>
+        <li>Masukkan ID tagihan dari merchant, lalu lihat detailnya.</li>
+        <li>Klik <b>Approve tUSD8</b> (sekali, sebesar jumlah tagihan), lalu <b>Bayar Sekarang</b>.</li>
+        <li>Struk pembayaran muncul di bawah — 90% langsung ke merchant, 10% ke tabungannya.</li>
+      </ol>
+      <p class="muted">Ini testnet: token tUSD8 &amp; tQDAY gratis dari faucet, bukan uang sungguhan.</p>
+    </div>
+  </section>
+
+  <div class="card log-card">
+    <h2>Log Transaksi</h2>
+    <pre id="log">Siap. Hubungkan MetaMask untuk mulai.</pre>
+  </div>
+</main>
+
+<footer>
+  <p>WarungPay — Aevum Builder Challenge #1 (Track: Invoice Payments) ·
+  <a href="https://explorer-test.qday.info" target="_blank" rel="noopener">Explorer Aevum</a> ·
+  <a href="https://faucet.qday.info" target="_blank" rel="noopener">Faucet tQDAY &amp; tUSD8</a></p>
+  <p class="muted">Testnet — bukan uang sungguhan.</p>
+</footer>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
